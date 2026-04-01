@@ -1,45 +1,127 @@
-Methodology
+# Universal Methodology for Parametric 3D Model Generation Using Build123d
 
-The development of the 3D model was carried out using a parametric approach in Build123d.
+## 1. Input Data Standardization
 
-1. Extraction of Outer Profile Coordinates
+All geometric inputs are converted into structured formats:
 
-First, the outer profile of the component was identified.
-The coordinate points (X, Y) of the boundary were manually extracted from the CAD model (Fusion/visual reference).
-These coordinates represent the exact geometry of the outer contour.
+* Outer boundary → ordered XY coordinates (CSV)
+* Holes → center coordinates with radii
+* Features → parametric dimensions (length, width, height)
+* Optional CAD input → DXF for reference or extraction
 
-2. Creation of 2D Profile
+This ensures a consistent and reusable input pipeline across multiple parts.
 
-The extracted coordinate points were used to construct a closed 2D profile.
-This was achieved by connecting all the points sequentially using line segments (Polyline approach) to ensure a continuous boundary.
+---
 
-3. Conversion to 3D Model (Extrusion)
+## 2. Coordinate System Normalization
 
-Once the 2D closed profile was created, it was converted into a 3D solid by applying an extrusion operation.
-A thickness of 4 mm was used to generate the base plate.
+To maintain consistency across different geometries:
 
-4. Bounding Box Calculation
+* Compute centroid of outer boundary points
+* Shift all coordinates to a local origin (0,0)
+* Ensure all dependent features (holes, cutouts, blocks) use the same reference system
 
-After creating the base plate, the bounding box of the geometry was computed.
-This helped in identifying the extreme edges (minimum and maximum X and Y values), which are necessary for positioning additional features accurately.
+This step eliminates alignment and scaling mismatches.
 
-5. Addition of Secondary Feature (Box)
+---
 
-A square feature of 30 mm × 30 mm was created on the top surface of the plate.
-The position of this box was defined relative to the bounding box (bottom-right corner alignment).
+## 3. Boundary Reconstruction
 
-6. Extrusion of Secondary Feature
+* Sort points using angular ordering (atan2) to maintain continuity
+* Generate a closed polyline
+* Convert the polyline into a planar face
 
-The square profile was extruded by 20 mm to create a raised feature on the plate.
+This defines the base 2D geometry of the component.
 
-7. Position Adjustment
+---
 
-The box was further adjusted using translation operations:
+## 4. Base Solid Creation
 
-Shifted in Y-direction (32 mm) for correct placement
-Shifted in Z-direction (-34 mm) to align it properly with the base geometry
-8. Future Improvement (Automation)
+* Extrude the 2D face along Z-axis
+* Thickness remains parametric (e.g., 2–10 mm depending on part)
 
-Currently, coordinate extraction was done manually.
-To improve accuracy and efficiency, AutoCAD has been installed.
-In future steps, coordinates will be extracted automatically from DXF/DWG files using AutoCAD tools, reducing manual errors and improving precision.
+This forms the primary solid body.
+
+---
+
+## 5. Feature-Based Parametric Modeling
+
+### 5.1 Hole Features
+
+* Define holes as (X, Y, Radius) tuples
+* Apply subtractive extrusion for through holes
+* For advanced cases:
+
+  * Use loft for tapered holes (different top/bottom diameters)
+  * Use offset planes for countersinks
+
+### 5.2 Edge/Corner Features
+
+* Compute bounding box of base geometry
+* Place features relative to edges (top-right, bottom-left, etc.)
+* Maintain parametric offsets for flexibility
+
+### 5.3 Additional Bodies (Boss / Cut / Pocket)
+
+* Create sketches on required planes
+* Add or subtract material using extrusion
+* Maintain feature independence for easy modification
+
+---
+
+## 6. Boolean Operations Strategy
+
+* Use `Mode.ADD` for material addition
+* Use `Mode.SUBTRACT` for cuts and holes
+* Keep operations modular to isolate errors and simplify debugging
+
+---
+
+## 7. Geometric Validation
+
+### 7.1 Visual Validation
+
+* Use 3D viewer to inspect geometry
+* Ensure correct placement of features
+
+### 7.2 Dimensional Validation
+
+* Compare key dimensions with source CAD
+
+### 7.3 Volumetric Validation
+
+* Compare generated model volume with reference
+* Perform symmetry checks (e.g., +X vs –X volume)
+
+---
+
+## 8. Error Handling & Correction
+
+Common corrections include:
+
+* Refining boundary point density (for accurate profiles)
+* Correcting coordinate misalignment
+* Fixing hole geometry (cylindrical vs tapered vs countersink)
+* Ensuring symmetry in material removal
+
+---
+
+## 9. Output Automation
+
+* Export final geometry as STL
+* File naming derived automatically from script name
+* Maintain consistent output directory
+
+---
+
+## 10. Reusability & Scalability
+
+* All parameters (thickness, hole size, feature position) remain editable
+* Same script structure can be reused for multiple parts
+* Supports CAD → CSV → 3D workflow
+
+---
+
+## Conclusion
+
+This universal methodology provides a scalable and robust framework for generating accurate parametric 3D models from 2D data using Build123d. It ensures consistency, repeatability, and adaptability across multiple part designs, making it suitable for engineering, prototyping, and production workflows.
