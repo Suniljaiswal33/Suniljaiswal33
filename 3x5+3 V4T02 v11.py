@@ -3731,45 +3731,8 @@ if poly_extrude is not None:
     print(f"Polygon extrusion (+Z 170 mm): is_manifold={poly_extrude.is_manifold}  volume={poly_extrude.volume:.2f} mm³")
 else:
     print("Polygon extrusion failed.")
-
-# ── Combined export ────────────────────────────────────────────────────────
-if True and len(_ep_solids) == 7:
-    combined = Compound([_cut_targets['snap_fit'],            _cut_targets['loft_part'],
-                         _cut_targets['swept_combined'],
-                         _cut_targets['profile_part'],        _cut_targets['profile_part2'],
-                         _cut_targets['loft_part2'],          _cut_targets['loft_feature1'],
-                         _cut_targets['loft_feature_3prof'],
-                         _cut_targets['loft_feature_strip'],  _cut_targets['loft_feature_strip2'],
-                         _cut_targets['loft_feature_strip3'], _cut_targets['loft_feature_strip4'],
-                         enclosure_final,
-                         _cut_targets['loft_smooth'],
-                         _cut_targets['loft_tail'],
-                         *([poly_extrude] if poly_extrude is not None else []),
-                         *_ep_solids])
-   # ══════════════════════════════════════════════
-# TOTAL VOLUME
-# ══════════════════════════════════════════════
-total_volume = sum(
-    p.volume for p in [
-        snap_fit.part,
-        loft_part.part,
-        swept_combined.part,
-        profile_part.part if profile_part else None,
-        profile_part2.part if profile_part2 else None,
-        loft_part2.part,
-        loft_feature1.part,
-        loft_feature_3prof.part,
-        loft_feature_strip.part,
-        loft_feature_strip2.part,
-        loft_feature_strip3.part,
-        loft_feature_strip4.part,
-        loft_6, loft_7, loft_8,
-        loft_smooth, loft_tail,
-        *_ep_solids,
-        poly_extrude if poly_extrude else None,
-    ] if p is not None
-)
-points = [
+   # ── New Feature — profile extrude 7.9mm ──────────────────
+_new_pts = [
     (-150.5693, 0.0, -664.7693),
     (-50.551,   0.0, -654.9635),
     (18.7428,   0.0, -649.0801),
@@ -3794,21 +3757,114 @@ points = [
     (-116.1137, 0.0, -657.2431),
     (-132.1299, 0.0, -662.4314),
 ]
+_new_vecs   = [Vector(x, y, z) for x, y, z in _new_pts]
+_new_wire   = Wire.make_polygon(_new_vecs, close=True)
+_new_face   = Face(_new_wire)
+new_feature = Solid.extrude(_new_face, Vector(0, -79, 0))
+print(f"New Feature DONE | Volume: {new_feature.volume:.4e} mm3")
+_bb_nf = new_feature.bounding_box()
+print(f"new_feature: X:{_bb_nf.min.X:.1f}→{_bb_nf.max.X:.1f}  Y:{_bb_nf.min.Y:.1f}→{_bb_nf.max.Y:.1f}  Z:{_bb_nf.min.Z:.1f}→{_bb_nf.max.Z:.1f}")
+hole_pts_new = [
+    (-451.5554, -34.0132, -693.9643),
+    (-4.9532,   -33.7006, -651.1039),
+]
+for x, y, z in hole_pts_new:
+    print(f"Point: X:{x:.1f} Y:{y:.1f} Z:{z:.1f}")
+    print(f"  X ok: {_bb_nf.min.X <= x <= _bb_nf.max.X}")
+    print(f"  Y ok: {_bb_nf.min.Y <= y <= _bb_nf.max.Y}")
+    print(f"  Z ok: {_bb_nf.min.Z <= z <= _bb_nf.max.Z}")
+# ── Hole cut — 55mm dia, 63mm deep, normal direction ──────────────────
+import numpy as np
 
-vecs        = [Vector(x, y, z) for x, y, z in points]
-wire        = Wire.make_polygon(vecs, close=True)
-face        = Face(wire)
-new_feature = Solid.extrude(face, Vector(0, 7.9, 0))
+hole_pts_new = [
+    (-451.5554, -34.0132, -693.9643),
+    (-4.9532,   -33.7006, -651.1039),
+]
 
-bb = new_feature.bounding_box()
-print(f"✅ New Feature DONE | Volume: {new_feature.volume:.4e} mm³")
-print(f"   X:{bb.min.X:.1f}→{bb.max.X:.1f}  Y:{bb.min.Y:.1f}→{bb.max.Y:.1f}  Z:{bb.min.Z:.1f}→{bb.max.Z:.1f}")
+# SVD plane from 2 points
+_hp = np.array([[x, y, z] for x, y, z in hole_pts_new])
+_hc = np.mean(_hp, axis=0)
+_, _, _hVt = np.linalg.svd(_hp - _hc)
+_hn = _hVt[-1] / np.linalg.norm(_hVt[-1])
 
-print(f"\n✅ TOTAL VOLUME : {total_volume:.2f} mm³")
-print(f"✅ TOTAL VOLUME : {total_volume/1000:.4f} cm³")                      
-export_step(combined, "/Users/softage/Desktop/3x5+3 V4T02 v11.step")
-export_stl(combined,  "/Users/softage/Desktop/3x5+3 V4T02 v11.stl")
-   
-print("Combined export → Desktop/skeletyl_combined.step / .stl")
-print(f"✓ Added smooth multi-profile loft with 6 sections (X: -897.897 → -553.2745)")
-print("Error: one or more parts missing — combined export skipped.")
+for i, (x, y, z) in enumerate(hole_pts_new):
+    _hole_plane = Plane(
+        origin=(x, y, z),
+        z_dir=Vector(float(_hn[0]), float(_hn[1]), float(_hn[2]))
+    )
+    _hole_face = Face(Wire(Edge.make_circle(15, _hole_plane)))  # r=27.5 = 55mm dia
+    _hole_tool = Solid.extrude(
+        _hole_face.moved(Location(Vector(
+            float(-_hn[0] * 31.5),
+            float(-_hn[1] * 31.5),
+            float(-_hn[2] * 31.5),
+        ))),
+        Vector(float(_hn[0] * 63.0),
+               float(_hn[1] * 63.0),
+               float(_hn[2] * 63.0))
+    )
+
+    new_feature = new_feature.cut(_hole_tool)
+    try:    new_feature = new_feature.solids()[0]
+    except: pass
+    print(f"Hole {i+1} DONE | Volume: {new_feature.volume:.4e} mm3")
+if True and len(_ep_solids) == 7:
+    combined = Compound([
+        _cut_targets['snap_fit'],
+        _cut_targets['loft_part'],
+        _cut_targets['swept_combined'],
+        _cut_targets['profile_part'],
+        _cut_targets['profile_part2'],
+        _cut_targets['loft_part2'],
+        _cut_targets['loft_feature1'],
+        _cut_targets['loft_feature_3prof'],
+        _cut_targets['loft_feature_strip'],
+        _cut_targets['loft_feature_strip2'],
+        _cut_targets['loft_feature_strip3'],
+        _cut_targets['loft_feature_strip4'],
+        enclosure_final,
+        _cut_targets['loft_smooth'],
+        _cut_targets['loft_tail'],
+        new_feature,
+        *([poly_extrude] if poly_extrude is not None else []),
+        *_ep_solids,
+    ])
+
+    total_volume = sum(
+        p.volume for p in [
+            _cut_targets['snap_fit'],
+            _cut_targets['loft_part'],
+            _cut_targets['swept_combined'],
+            _cut_targets['profile_part'],
+            _cut_targets['profile_part2'],
+            _cut_targets['loft_part2'],
+            _cut_targets['loft_feature1'],
+            _cut_targets['loft_feature_3prof'],
+            _cut_targets['loft_feature_strip'],
+            _cut_targets['loft_feature_strip2'],
+            _cut_targets['loft_feature_strip3'],
+            _cut_targets['loft_feature_strip4'],
+            loft_6, loft_7, loft_8,
+            loft_smooth, loft_tail,
+            new_feature,
+            *_ep_solids,
+            poly_extrude if poly_extrude else None,
+        ] if p is not None
+    )
+
+    print(f"\nTOTAL VOLUME : {total_volume:.2f} mm3")
+    print(f"TOTAL VOLUME : {total_volume/1000:.4f} cm3")
+
+    export_step(combined, "/Users/softage/Desktop/3x5+3 V4T02 v11.step")
+    export_stl(combined,  "/Users/softage/Desktop/3x5+3 V4T02 v11.stl")
+    print("Combined export DONE")
+
+    try:
+        from ocp_vscode import show, Camera
+        show(combined, reset_camera=Camera.RESET)
+        print("Preview opened")
+    except ImportError:
+        print("ocp_vscode not found")
+
+else:
+    print(f"ep_solids count: {len(_ep_solids)} — expected 7")
