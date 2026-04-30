@@ -5,7 +5,7 @@ import openpyxl
 import os
 from build123d import *
 
-EXCEL_PATH = os.path.expanduser("~/Desktop/3x5_3 low v16(1).xlsx")
+EXCEL_PATH = os.path.expanduser("~/Desktop/3x5_3 low blackpill and standard v16(1).xlsx")
 
 # ── Read Excel data ──────────────────────────────────────────────────────────
 # Check if file exists, otherwise skip Excel loading and use defaults
@@ -485,7 +485,7 @@ with BuildPart() as swept_combined:
         print(f"Quad cut {_qi} applied")
 
 # ── Profile from Excel at Y=-10, extruded to Y=-37.5 ─────────────────────────
-EXCEL_PATH2 = os.path.expanduser("~/Desktop/3x5_3 low v16(2).xlsx")
+EXCEL_PATH2 = os.path.expanduser("~/Desktop/3x5_3 low blackpill and standard v16(2).xlsx")
 _wb2 = openpyxl.load_workbook(EXCEL_PATH2) if os.path.exists(EXCEL_PATH2) else None
 
 def _read_periphery_xz2(sheet_name):
@@ -550,7 +550,7 @@ else:
     print("Error: No profile geometry created.")
 
 # ── Profile from 3skeletyl_shape.xlsx at Y=-10, extruded to Y=-40 ─────────────
-EXCEL_PATH3 = os.path.expanduser("~/Desktop/3x5_3 low v16.xlsx")
+EXCEL_PATH3 = os.path.expanduser("~/Desktop/3x5_3 low blackpill and standard v16.xlsx")
 _wb3 = openpyxl.load_workbook(EXCEL_PATH3) if os.path.exists(EXCEL_PATH3) else None
 
 def _read_periphery_xz3(sheet_name):
@@ -3896,6 +3896,50 @@ _cut_targets['loft_feature_strip'] = _cut_targets['loft_feature_strip'].cut(cyl_
 _v1b = _cut_targets['loft_feature_strip'].volume
 _v2b = _cut_targets['loft_feature_strip2'].volume
 print(f"After cut  — strip: {_v1b:.0f} (Δ={_v1-_v1b:.0f})  strip2: {_v2b:.0f} (Δ={_v2-_v2b:.0f})")
+# ── Boss cylinder (inner dia solid rod) ───────────────────────────────
+with BuildPart() as cyl_boss:
+    with Locations(Location(cyl_main["pos"], cyl_main["rot"])):
+        Cylinder(
+            radius=cyl_main["id"] / 2,
+            height=2000,
+            mode=Mode.ADD
+        )
+print(f"Boss OK | Volume: {cyl_boss.part.volume:.2f} mm3")
+# ── Cut all parts with cyl_boss ───────────────────────────────────────
+_parts_to_cut = [
+    'snap_fit', 'loft_part', 'swept_combined', 'profile_part',
+    'profile_part2', 'loft_part2', 'loft_feature1', 'loft_feature_3prof',
+    'loft_feature_strip', 'loft_feature_strip2', 'loft_feature_strip3',
+    'loft_feature_strip4', 'loft_smooth', 'loft_tail',
+]
+for _pname in _parts_to_cut:
+    _v1 = _cut_targets[_pname].volume
+    _cut_targets[_pname] = _cut_targets[_pname].cut(cyl_boss.part)
+    _delta = _v1 - _cut_targets[_pname].volume
+    if _delta > 1:
+        print(f"CUT HIT: {_pname}  delta={_delta:.0f} mm3")
+    else:
+        print(f"no cut : {_pname}")
+
+_v1 = enclosure_final.volume
+enclosure_final = enclosure_final.cut(cyl_boss.part)
+_delta = _v1 - enclosure_final.volume
+print(f"{'CUT HIT' if _delta > 1 else 'no cut'}: enclosure_final  delta={_delta:.0f}")
+
+_v1 = loft_connector.volume
+loft_connector = loft_connector.cut(cyl_boss.part)
+_delta = _v1 - loft_connector.volume
+print(f"{'CUT HIT' if _delta > 1 else 'no cut'}: loft_connector  delta={_delta:.0f}")
+
+_v1 = loft_new2.volume
+loft_new2 = loft_new2.cut(cyl_boss.part)
+_delta = _v1 - loft_new2.volume
+print(f"{'CUT HIT' if _delta > 1 else 'no cut'}: loft_new2  delta={_delta:.0f}")
+
+print("cyl_boss cut done")
+
+
+
 
 if True and len(_ep_solids) == 7:
     combined = Compound([
@@ -3918,6 +3962,7 @@ if True and len(_ep_solids) == 7:
         cyl_part.part,
         loft_connector,
         loft_new2,
+        cyl_boss.part,
         *([poly_extrude] if poly_extrude is not None else []),
         *_ep_solids,
     ])
@@ -3930,6 +3975,16 @@ _v_before2 = _cut_targets['loft_feature_strip'].volume
 _cut_targets['loft_feature_strip'] = _cut_targets['loft_feature_strip'].cut(cyl_part.part)
 _v_after2 = _cut_targets['loft_feature_strip'].volume
 print(f"strip cut:  {_v_before2:.0f} → {_v_after2:.0f}  Δ={_v_before2 - _v_after2:.0f}")
+# ── Inner diameter boss (visible solid) ───────────────────────────────
+with BuildPart() as cyl_part:
+    with Locations(Location(cyl_main["pos"], cyl_main["rot"])):
+        Cylinder(radius=cyl_main["od"] / 2, height=cyl_main["height"])
+        Cylinder(radius=cyl_main["id"] / 2, height=cyl_main["height"], mode=Mode.SUBTRACT)
+    with Locations(Location(cyl_sub["pos"], cyl_sub["rot"])):
+        Cylinder(radius=cyl_sub["od"] / 2, height=cyl_sub["height"], mode=Mode.SUBTRACT)
+
+
+
 
 total_volume = sum(
         p.volume for p in [
@@ -3951,6 +4006,7 @@ total_volume = sum(
             cyl_part.part,
             loft_connector,
             loft_new2,
+            cyl_boss.part,
             *_ep_solids,
             poly_extrude if poly_extrude else None,
         ] if p is not None
@@ -3959,8 +4015,8 @@ total_volume = sum(
 print(f"\nTOTAL VOLUME : {total_volume * 1000:.4e} mm3")
 print(f"TOTAL VOLUME : {total_volume * 1000 / 1000:.4f} cm3")
 
-export_step(combined, "/Users/softage/Desktop/3x5_3 low v16.step")
-export_stl(combined,  "/Users/softage/Desktop/3x5_3 low v16.stl")
+export_step(combined, "/Users/softage/Desktop/3x5_3 low blackpill and standard v16.step")
+export_stl(combined,  "/Users/softage/Desktop/3x5_3 low blackpill and standard v16.stl")
 print("Combined export DONE")
 
 try:
